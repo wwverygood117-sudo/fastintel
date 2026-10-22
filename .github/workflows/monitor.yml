@@ -1,5 +1,12 @@
 name: fastintel 情报巡检
 
+# 定时策略说明：
+# GitHub 的 schedule 事件对新建仓库/新账号经常不派发（本仓库实测近 3 小时 0 次触发），
+# 所以主力靠「自链式」：一轮跑完由 scripts/chain.sh 调 workflow_dispatch 触发下一轮。
+# 触发用的是 Actions 自带的 GITHUB_TOKEN（需要 actions: write 权限），
+# 好处是不依赖个人 PAT、不会过期，用户不需要做任何后续维护。
+# schedule 保留作为兜底，万一哪天 GitHub 恢复了调度，也不会重复推送（seen 去重 + concurrency 串行）。
+
 on:
   schedule:
     - cron: "3,13,23,33,43,53 * * * *"
@@ -17,7 +24,10 @@ on:
 
 permissions:
   contents: read
+  # 自链式触发下一轮必须有这个权限
+  actions: write
 
+# 同一时刻只允许一轮，避免 schedule 恢复后和自链式打架
 concurrency:
   group: fastintel-scan
   cancel-in-progress: false
@@ -25,14 +35,20 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 10 分钟一轮 + 扫描耗时，留足余量；被 timeout 杀掉会导致链断
+    timeout-minutes: 25
     env:
       TZ: Asia/Shanghai
       PYTHONIOENCODING: utf-8
       PYTHONUNBUFFERED: "1"
       BARK_KEY: ${{ secrets.BARK_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      INTERVAL_SEC: "600"
 
     steps:
+      - name: 记下开跑时间
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 拉代码
         uses: actions/checkout@v4
 
@@ -73,3 +89,9 @@ jobs:
           path: dashboard.html
           retention-days: 3
           if-no-files-found: ignore
+
+      # 关键步骤：本步骤会 sleep 补齐到 10 分钟，然后触发下一轮。
+      # 即使上面的扫描失败（always），链也会继续，不会因为一次报错就永久停摆。
+      - name: 续上下一轮
+        if: always()
+        run: bash scripts/chain.sh
