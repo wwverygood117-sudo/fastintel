@@ -1,0 +1,75 @@
+name: fastintel 情报巡检
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "运行模式：normal 正常跑 / dry 只看不推 / check 只测源连通"
+        required: false
+        default: "normal"
+        type: choice
+        options:
+          - normal
+          - dry
+          - check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fastintel-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Shanghai
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+      BARK_KEY: ${{ secrets.BARK_KEY }}
+
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v4
+
+      - name: 装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 恢复去重状态
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: fastintel-state-${{ github.run_id }}
+          restore-keys: |
+            fastintel-state-
+
+      - name: 确认 bark key 已配置
+        run: |
+          if [ -z "$BARK_KEY" ]; then
+            echo "::error::仓库里没有 BARK_KEY 这个 Secret，推送不会发出去。到 Settings → Secrets and variables → Actions 里加一个。"
+            exit 1
+          fi
+          echo "bark key 已就位（长度 ${#BARK_KEY}）"
+
+      - name: 跑一轮
+        run: |
+          case "${{ inputs.mode }}" in
+            dry)   python monitor.py --dry --force ;;
+            check) python monitor.py --check ;;
+            *)     python monitor.py --force ;;
+          esac
+
+      - name: 留存看板
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-${{ github.run_id }}
+          path: dashboard.html
+          retention-days: 3
+          if-no-files-found: ignore

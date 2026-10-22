@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>fastintel · 情报看板</title>
+<style>
+  :root{
+    --bg:#0b0e14; --card:#141821; --card2:#1a1f2b; --line:#232936;
+    --text:#e6e9ef; --muted:#8b93a3; --dim:#5d6577;
+    --teal:#4dd4ac; --amber:#f5b942; --blue:#5b9bf8; --red:#f07178;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.6; padding:28px 20px 60px;
+  }
+  .wrap{max-width:960px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:20px;font-weight:500;letter-spacing:.5px}
+  .sub{font-size:12px;color:var(--dim)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:18px 0}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .stat b{display:block;font-size:22px;font-weight:500;line-height:1.2}
+  .stat span{font-size:11px;color:var(--muted)}
+  .stat.warn b{color:var(--amber)}
+  .stat.good b{color:var(--teal)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:20px 0 14px}
+  input[type=search]{
+    flex:1;min-width:200px;background:var(--card);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:8px 12px;font-size:13px;outline:none;font-family:inherit;
+  }
+  input[type=search]:focus{border-color:#3a4457}
+  .chip{
+    background:var(--card);border:1px solid var(--line);color:var(--muted);
+    border-radius:20px;padding:5px 13px;font-size:12px;cursor:pointer;user-select:none;
+  }
+  .chip:hover{color:var(--text);border-color:#3a4457}
+  .chip.on{background:#16302b;border-color:#2d6a5a;color:var(--teal)}
+  .item{
+    background:var(--card);border:1px solid var(--line);border-left:2px solid var(--line);
+    border-radius:10px;padding:13px 16px;margin-bottom:9px;transition:border-color .15s;
+  }
+  .item:hover{border-color:#3a4457}
+  .item.t1{border-left-color:var(--teal)}
+  .item.t2{border-left-color:var(--blue)}
+  .item.t3{border-left-color:#3a4457}
+  .item a{color:var(--text);text-decoration:none;font-weight:500}
+  .item a:hover{color:var(--teal);text-decoration:underline}
+  .meta{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin-top:7px;align-items:center}
+  .tag{background:var(--card2);border-radius:4px;padding:1px 7px;color:var(--muted);font-size:11px}
+  .tag.fast{background:#16302b;color:var(--teal)}
+  .tag.slow{background:#2a2314;color:var(--amber)}
+  .tag.kw{background:#1a2033;color:var(--blue)}
+  .empty{text-align:center;color:var(--dim);padding:34px 20px;font-size:13px;
+    border:1px dashed var(--line);border-radius:10px;margin-bottom:4px}
+  .sechead{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);
+    font-size:12px;color:var(--muted);margin-bottom:10px}
+  .sechead span{display:block;color:var(--dim);font-size:11px;margin-top:2px}
+  .ritem{display:flex;gap:10px;font-size:12.5px;padding:6px 2px;border-bottom:1px solid #191e28}
+  .ritem a{color:var(--muted);text-decoration:none;flex:1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ritem a:hover{color:var(--teal)}
+  .ritem i{font-style:normal;color:var(--dim);font-size:11px;white-space:nowrap;min-width:78px}
+  footer{margin-top:26px;font-size:11px;color:var(--dim);line-height:1.9}
+  footer code{background:var(--card);padding:1px 6px;border-radius:4px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>fastintel · 情报看板</h1>
+    <span class="sub" id="gen">—</span>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="搜索标题 / 关键词…">
+    <span class="chip on" data-tier="all">全部</span>
+    <span class="chip" data-tier="1">一级源</span>
+    <span class="chip" data-tier="2">二级源</span>
+    <span class="chip" data-tier="3">转载层</span>
+  </div>
+
+  <div id="list"></div>
+
+  <div id="recentWrap" style="display:none">
+    <div class="sechead">背景流 · 未命中关键词的新内容
+      <span>管道正常工作时这里会一直有东西进来，方便你随时校准关键词</span></div>
+    <div id="recent"></div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+let tierFilter = 'all', q = '';
+
+function fmtDelay(d){
+  if(d === null || d === undefined) return null;
+  if(d < 60) return d + ' 分钟';
+  if(d < 1440) return Math.round(d/60) + ' 小时';
+  return Math.round(d/1440) + ' 天';
+}
+
+function render(){
+  const items = (DATA.items || []).filter(it => {
+    if(tierFilter !== 'all' && String(it.tier) !== tierFilter) return false;
+    if(q && !(it.title + ' ' + (it.kw||[]).join(' ')).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const s = DATA.stats || {};
+  document.getElementById('gen').textContent = '最后扫描 ' + (s.last_run || '—') + ' · 每 5 分钟自动更新';
+  document.getElementById('stats').innerHTML = `
+    <div class="stat good"><b>${s.new_this_run ?? 0}</b><span>本轮新命中</span></div>
+    <div class="stat"><b>${s.total ?? 0}</b><span>累计情报</span></div>
+    <div class="stat"><b>${s.sources_ok ?? 0}</b><span>在线源</span></div>
+    <div class="stat ${s.sources_fail ? 'warn' : ''}"><b>${s.sources_fail ?? 0}</b><span>不可用源</span></div>`;
+
+  document.getElementById('list').innerHTML = items.length ? items.map(it => {
+    const d = fmtDelay(it.delay);
+    const cls = (it.delay !== null && it.delay !== undefined && it.delay < 60) ? 'fast' : 'slow';
+    return `<div class="item t${it.tier||3}">
+      <a href="${it.url}" target="_blank" rel="noopener">${esc(it.title)}</a>
+      <div class="meta">
+        <span class="tag">${esc(it.src)}</span>
+        <span>${it.t || '--'}</span>
+        ${d ? `<span class="tag ${cls}">延迟 ${d}</span>` : ''}
+        ${(it.kw||[]).slice(0,4).map(k=>`<span class="tag kw">${esc(k)}</span>`).join('')}
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty">本轮扫描 ${s.scanned ?? 0} 条，暂无命中<br>
+      <span style="color:var(--dim);font-size:11.5px">管道是通的——下面「背景流」就是刚刚抓回来的内容。关键词在 config.json 里调。</span></div>`;
+
+  const fail = (s.failed||[]);
+  const rec = (DATA.recent || []).filter(r => !q || r.title.toLowerCase().includes(q));
+  document.getElementById('recentWrap').style.display = rec.length ? 'block' : 'none';
+  document.getElementById('recent').innerHTML = rec.map(r =>
+    `<div class="ritem"><i>${r.t}</i><a href="${r.url}" target="_blank" rel="noopener">${esc(r.title)}</a><i>${esc(r.src)}</i></div>`
+  ).join('');
+
+  document.getElementById('foot').innerHTML =
+    `采集时间 ${s.last_run||'—'} · 数据文件 <code>data/feed.json</code> · 关键词与源在 <code>config.json</code> 里改`
+    + (fail.length ? `<br>不可用源：<code>${fail.map(esc).join('</code> <code>')}</code> —— 通常是国内网络访问不了，挂上代理后会自动恢复` : '');
+}
+
+function esc(s){ return String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+document.getElementById('q').addEventListener('input', e => { q = e.target.value.toLowerCase(); render(); });
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+  c.classList.add('on');
+  tierFilter = c.dataset.tier;
+  render();
+}));
+
+render();
+setTimeout(() => location.reload(), 60000);
+</script>
+</body>
+</html>

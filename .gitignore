@@ -1,0 +1,6 @@
+data/
+dashboard.html
+__pycache__/
+*.pyc
+*.log
+.last-active
