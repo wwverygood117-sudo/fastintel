@@ -233,9 +233,9 @@
       "url": "https://www.reddit.com/r/LocalLLaMA",
       "limit": 40,
       "tier": 1,
-      "enabled": true,
+      "enabled": false,
       "timeout": 8,
-      "note": "开源模型动态最快的地方",
+      "note": "GitHub Actions 的 IP 段被 Reddit 403 封锁，云端无法抓取，2026-10-22 关闭",
       "interval_sec": 300
     },
     {
@@ -244,9 +244,9 @@
       "url": "https://www.reddit.com/r/artificial",
       "limit": 40,
       "tier": 1,
-      "enabled": true,
+      "enabled": false,
       "timeout": 8,
-      "note": "",
+      "note": "GitHub Actions 的 IP 段被 Reddit 403 封锁，云端无法抓取，2026-10-22 关闭",
       "interval_sec": 300
     },
     {
@@ -275,9 +275,9 @@
       "type": "rss",
       "url": "https://www.jiqizhixin.com/rss",
       "tier": 3,
-      "enabled": true,
+      "enabled": false,
       "timeout": 8,
-      "note": "RSS 返回的不是合法 XML，先关掉",
+      "note": "官方 /rss 已改为 HTML 数据服务页，源已下线，2026-10-22 关闭",
       "interval_sec": 1800
     },
     {
