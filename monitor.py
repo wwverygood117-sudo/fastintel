@@ -496,7 +496,8 @@ def main():
         except Exception:
             pass
 
-    log(f"开始扫描 {len(cfg['sources'])} 个源"
+    enabled_srcs = [s for s in cfg["sources"] if s.get("enabled", True)]
+    log(f"开始扫描 {len(enabled_srcs)} 个源"
         + ("（首次运行：只推送最近 2 小时的消息）" if first_run else ""))
 
     # 分层轮询：每 tick 跑一次循环，但每个源按自己的 interval_sec 决定要不要抓
