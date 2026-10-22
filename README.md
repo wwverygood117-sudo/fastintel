@@ -16,7 +16,47 @@ GitHub Actions（每 10 分钟，海外节点）
 
 去重状态（`data/seen.json`、`data/feed.json`、`data/schedule.json`）用 Actions 的 cache 在每轮之间传递，不提交进仓库，所以仓库里不会有几百个垃圾 commit。
 
-## 部署（5 步，约 5 分钟）
+## 当前部署状态（2026-10-22 已完成）
+
+| 项目 | 状态 |
+|---|---|
+| 仓库 | https://github.com/wwverygood117-sudo/fastintel （Public） |
+| Secret | `BARK_KEY` 已写入 |
+| 定时任务 | 每 10 分钟，**自链式**（见下节），不依赖 GitHub 的 schedule |
+| 首轮验证 | 13:13 抓 11 个源 2829 条，命中 16 条，`已推送: console, bark` |
+| 去重验证 | 第二轮命中 0 条，说明 cache 状态成功跨轮保留 |
+
+## 为什么不用 GitHub 自带的定时器
+
+2026-10-22 实测：`schedule` 从 13:00 到 16:44（近 4 小时、应触发 20+ 次）**一次都没触发**。排查结论：
+
+- 两个 workflow 的 `state` 都是 `active`，默认分支是 `main`，cron 写法正确
+- `push` 和 `workflow_dispatch` 都能正常跑 → Actions 本身没问题
+- 换过 cron 写法（`*/10` → 错开整十点）、另建每分钟触发的测试 workflow，全部 0 次
+- 结论：GitHub 对新建仓库/新账号的调度做了限流或干脆没注册，属平台侧行为，改配置无用
+
+所以改成**自链式**：
+
+```
+第 N 轮跑完 → sleep 补齐到 10 分钟 → 用 GITHUB_TOKEN 调 workflow_dispatch → 第 N+1 轮
+```
+
+关键点：官方文档明确 `workflow_dispatch` 和 `repository_dispatch` 是「GITHUB_TOKEN 触发不会创建新运行」这条规则的**例外**，所以不需要个人 PAT、不会过期、无需任何人工维护。workflow 里靠 `permissions: actions: write` 拿到触发权限。
+
+`schedule` 保留着当兜底：万一哪天 GitHub 恢复了调度，`concurrency` 会让两轮串行、`seen` 去重会让第二轮推 0 条，不会重复轰炸手机。
+
+**链断了的恢复办法**：去 Actions 页面手动点一次 `Run workflow`，链就接上了。另外 `scripts/chain.sh` 在连续 4 次触发失败时会通过 Bark 给你手机发一条「巡检链断了」的告警，不用自己盯着。
+
+**已关闭的三个源**（在 `config.json` 里 `enabled: false`，附原因）：
+
+- `机器之心` —— 官方 `/rss` 已改成 HTML 数据服务页，RSS 下线
+- `Reddit r/LocalLLaMA`、`Reddit r/artificial` —— Reddit 对 GitHub Actions 的 IP 段返回 `403 Blocked`，换 RSS 端点也绕不过
+
+**当前生效的 11 个源**：OpenRouter 模型雷达、OpenAI 官方、Google AI 官方、DeepMind 官方、HuggingFace 博客、Simon Willison、TechCrunch AI、The Verge AI、VentureBeat AI、Hacker News、量子位。
+
+本地那条每 3 小时的自动化「fastintel 情报巡检」已暂停，避免和云端重复推送。
+
+## 部署步骤（已执行完毕，留作重建参考）
 
 ### 1. 建仓库
 
@@ -77,7 +117,9 @@ curl "https://api.day.app/你的key/云端部署完成/以后电脑关机也能�
 
 ## 几个必须知道的限制
 
-**延迟不是精确的 10 分钟。** GitHub 免费 runner 是共享池，cron 到点后要排队，实测通常延迟 2-15 分钟，早晚高峰偶尔到 30 分钟。情报类监控一般无所谓；如果你要求秒级，只能上自己的 VPS。
+**延迟基本是准的 10 分钟。** 自链式的间隔由 `sleep` 控制，不受 GitHub cron 排队影响，误差只来自 runner 启动（通常 10-30 秒）。代价是每轮 job 会有约 8 分钟在 `sleep` 空转——Public 仓库的 Actions 分钟数不设上限，不产生费用。
+
+**单轮失败不会断链。** 续链那一步是 `if: always()`，扫描报错也会继续触发下一轮。但如果 job 被 `timeout-minutes: 25` 强制杀掉、或整个 Actions 服务故障，链会断——断链时手机会收到 Bark 告警，去 Actions 页面手动跑一次即可恢复。
 
 **海外节点反而修好了两个源。** 本地跑时 Reddit（r/LocalLLaMA、r/artificial）被墙一直失败，Actions 在美国跑，这两个源能通。HuggingFace 博客同理。
 
